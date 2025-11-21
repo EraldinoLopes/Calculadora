@@ -153,4 +153,12 @@ public class Complex {
         }
         return String.format("%.4f + %.4fi", real, imag);
     }
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Complex complex = (Complex) obj;
+        return Math.abs(real - complex.real) < 1e-9 && Math.abs(imag - complex.imag) < 1e-9;
+    }
+
 }
