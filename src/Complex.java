@@ -1,164 +1,174 @@
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+// Complex.java
 public class Complex {
-    private final double real;
-    private final double imag;
+
+    private final double re;
+    private final double im;
 
     public Complex(double real, double imag) {
-        this.real = real;
-        this.imag = imag;
+        this.re = real;
+        this.im = imag;
     }
 
-    public double getReal() { return real; }
-    public double getImag() { return imag; }
+    // --------------------------
+    // ------ PARSE COMPLEX -----
+    // --------------------------
+    public static Complex parse(String input) {
+        input = input.trim().replace(" ", "");
 
+        if (input.equals("i")) return new Complex(0, 1);
+        if (input.equals("+i")) return new Complex(0, 1);
+        if (input.equals("-i")) return new Complex(0, -1);
 
+        if (!input.contains("i")) {
+            return new Complex(Double.parseDouble(input), 0);
+        }
+
+        String realPart = "";
+        String imagPart = "";
+
+        int iPos = input.indexOf("i");
+        imagPart = input.substring(0, iPos);
+
+        int lastPlus = input.lastIndexOf('+', iPos - 1);
+        int lastMinus = input.lastIndexOf('-', iPos - 1);
+        int splitPos = Math.max(lastPlus, lastMinus);
+
+        if (splitPos <= 0) {
+            double im;
+            if (imagPart.equals("") || imagPart.equals("+"))
+                im = 1;
+            else if (imagPart.equals("-"))
+                im = -1;
+            else
+                im = Double.parseDouble(imagPart);
+            return new Complex(0, im);
+        }
+
+        realPart = input.substring(0, splitPos);
+        imagPart = input.substring(splitPos, iPos);
+
+        double re = Double.parseDouble(realPart);
+
+        double im;
+        if (imagPart.equals("+") || imagPart.equals(""))
+            im = 1;
+        else if (imagPart.equals("-"))
+            im = -1;
+        else
+            im = Double.parseDouble(imagPart);
+
+        return new Complex(re, im);
+    }
+
+    public double getReal() {
+        return re;
+    }
+
+    public double getImag() {
+        return im;
+    }
+
+    // --------------------------
+    // ----- OPERAÇÕES BÁSICAS --
+    // --------------------------
     public Complex plus(Complex b) {
-        return new Complex(real + b.real, imag + b.imag);
+        return new Complex(this.re + b.re, this.im + b.im);
     }
 
     public Complex minus(Complex b) {
-        return new Complex(real - b.real, imag - b.imag);
+        return new Complex(this.re - b.re, this.im - b.im);
     }
 
     public Complex times(Complex b) {
-        double novoReal = (real * b.real) - (imag * b.imag);
-        double novoImag = (real * b.imag) + (imag * b.real);
-        return new Complex(novoReal, novoImag);
-    }
-
-    public Complex scale(double alpha) {
-        return new Complex(real * alpha, imag * alpha);
+        return new Complex(
+                this.re * b.re - this.im * b.im,
+                this.re * b.im + this.im * b.re
+        );
     }
 
     public Complex divide(Complex b) {
-        double divisor = (b.real * b.real) + (b.imag * b.imag);
-        if (divisor == 0.0) {
-            throw new ArithmeticException("Divisão por zero no número complexo.");
-        }
-        Complex numerador = this.times(b.conjugate());
-        return new Complex(numerador.real / divisor, numerador.imag / divisor);
+        double denom = b.re * b.re + b.im * b.im;
+        return new Complex(
+                (this.re * b.re + this.im * b.im) / denom,
+                (this.im * b.re - this.re * b.im) / denom
+        );
+    }
+
+    public Complex scale(double s) {
+        return new Complex(this.re * s, this.im * s);
     }
 
     public Complex conjugate() {
-        return new Complex(real, -imag);
+        return new Complex(this.re, -this.im);
     }
 
-
-    public Complex pow(double exponent) {
-        if (real == 0 && imag == 0 && exponent > 0) return new Complex(0, 0);
-
-        double r = Math.sqrt(real * real + imag * imag);
-        double theta = Math.atan2(imag, real);
-
-        double novoR = Math.pow(r, exponent);
-        double novoTheta = theta * exponent;
-
-        double novoReal = novoR * Math.cos(novoTheta);
-        double novoImag = novoR * Math.sin(novoTheta);
-
-        return new Complex(novoReal, novoImag);
+    public double abs() {
+        return Math.hypot(re, im);
     }
 
-    public static Complex sqrt(double x){
-        if(x >= 0){
-            return new Complex(Math.sqrt(x), 0);
-        }else{
+    // --------------------------
+    // -------- POTÊNCIA --------
+    // --------------------------
+    public Complex pow(double x) {
+        double r = this.abs();
+        double theta = Math.atan2(im, re);
+
+        double newR = Math.pow(r, x);
+        double newTheta = theta * x;
+
+        return new Complex(
+                newR * Math.cos(newTheta),
+                newR * Math.sin(newTheta)
+        );
+    }
+
+    // --------------------------
+    // ----- FUNÇÕES COMPLEXAS --
+    // --------------------------
+    public static Complex exp(Complex z) {
+        double expReal = Math.exp(z.re);
+        return new Complex(
+                expReal * Math.cos(z.im),
+                expReal * Math.sin(z.im)
+        );
+    }
+
+    public static Complex log(Complex z) {
+        double r = z.abs();
+        double theta = Math.atan2(z.im, z.re);
+        return new Complex(Math.log(r), theta);
+    }
+
+    public static Complex sin(Complex z) {
+        return new Complex(
+                Math.sin(z.re) * Math.cosh(z.im),
+                Math.cos(z.re) * Math.sinh(z.im)
+        );
+    }
+
+    public static Complex cos(Complex z) {
+        return new Complex(
+                Math.cos(z.re) * Math.cosh(z.im),
+                -Math.sin(z.re) * Math.sinh(z.im)
+        );
+    }
+
+    public static Complex tan(Complex z) {
+        return sin(z).divide(cos(z));
+    }
+
+    public static Complex sqrt(double x) {
+        if (x < 0) {
             return new Complex(0, Math.sqrt(-x));
         }
+        return new Complex(Math.sqrt(x), 0);
     }
-
-
-    private static double parseComponentValue(String s) {
-        s = s.replaceAll("\\s+", "");
-        if (s.isEmpty()) return 0.0;
-
-        String numStr = s.replaceAll("[iI]", "");
-
-        if (numStr.isEmpty()) {
-            if (s.contains("+")) return 1.0;
-            if (s.contains("-")) return -1.0;
-            return 1.0;
-        }
-
-        if (numStr.equals("+")) return 1.0;
-        if (numStr.equals("-")) return -1.0;
-
-        try {
-            return Double.parseDouble(numStr);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Componente numérico inválido: " + s);
-        }
-    }
-
-
-    public static Complex parse(String s) {
-        String cleanS = s.replaceAll("\\s+", "");
-        if (cleanS.isEmpty()) throw new IllegalArgumentException("Entrada vazia.");
-
-        if (cleanS.endsWith("i") || cleanS.endsWith("I")) {
-            if (cleanS.indexOf('+') == -1 && cleanS.indexOf('-', 1) == -1) {
-                double imag = parseComponentValue(cleanS);
-                return new Complex(0.0, imag);
-            }
-        }
-
-        if (!cleanS.contains("i") && !cleanS.contains("I")) {
-            try {
-                double real = Double.parseDouble(cleanS);
-                return new Complex(real, 0.0);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Formato inválido: " + s);
-            }
-        }
-
-        int splitIndex = -1;
-        for (int i = 1; i < cleanS.length(); i++) {
-            char c = cleanS.charAt(i);
-            if ((c == '+' || c == '-') && (cleanS.charAt(i-1) != 'e' && cleanS.charAt(i-1) != 'E')) {
-                splitIndex = i;
-                break;
-            }
-        }
-
-        String realStr, imagStr;
-        if (splitIndex != -1) {
-            realStr = cleanS.substring(0, splitIndex);
-            imagStr = cleanS.substring(splitIndex);
-        } else {
-            throw new IllegalArgumentException("Formato do número complexo inválido: " + s);
-        }
-
-        double realPart = parseComponentValue(realStr);
-        double imagPart = parseComponentValue(imagStr);
-
-        return new Complex(realPart, imagPart);
-    }
-
 
     @Override
     public String toString() {
-        if (Math.abs(imag) < 1e-9) {
-            return String.format("%.4f", real);
-        }
-        if (Math.abs(real) < 1e-9) {
-            if (Math.abs(imag - 1.0) < 1e-9) return "i";
-            if (Math.abs(imag + 1.0) < 1e-9) return "-i";
-            return String.format("%.4fi", imag);
-        }
-
-        if (imag < 0) {
-            return String.format("%.4f - %.4fi", real, -imag);
-        }
-        return String.format("%.4f + %.4fi", real, imag);
+        if (im == 0) return String.valueOf(re);
+        if (re == 0) return im + "i";
+        if (im < 0) return re + "" + im + "i";
+        return re + "+" + im + "i";
     }
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        Complex complex = (Complex) obj;
-        return Math.abs(real - complex.real) < 1e-9 && Math.abs(imag - complex.imag) < 1e-9;
-    }
-
 }

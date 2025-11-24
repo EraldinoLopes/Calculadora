@@ -1,272 +1,414 @@
+// ExpressionParser.java
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 
 public class ExpressionParser {
 
-    private String expression;
-    private int position;
+    private final String expression;
+    private int pos;
     private final Map<String, Complex> variables;
     private final Map<String, Complex> allVariables;
 
     private Node root;
     private Complex lastResult;
 
-    private static class Node {
-        String value;
-        Node left, right;
+    // ==============================
+    // compareAst
+    // ==============================
+    public static boolean compareAst(Node a, Node b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        if (!a.token.equals(b.token)) return false;
+        if (a.children.size() != b.children.size()) return false;
 
-        Node(String value) { this.value = value; }
-        Node(String value, Node left, Node right) {
-            this.value = value;
-            this.left = left;
-            this.right = right;
+        for (int i = 0; i < a.children.size(); i++) {
+            if (!compareAst(a.children.get(i), b.children.get(i)))
+                return false;
         }
+        return true;
+    }
 
-        public String toString() {
-            return value;
+    // ==============================
+    // NÓ DO AST
+    // ==============================
+    public static class Node {
+        public final String token;
+        public final java.util.List<Node> children;
+
+        public Node(String token, Node... children) {
+            this.token = token;
+            this.children = new ArrayList<>();
+            if (children != null)
+                for (Node c : children)
+                    this.children.add(c);
         }
     }
 
+    private static class Result {
+        Complex value;
+        Node node;
+        Result(Complex v, Node n) {
+            value = v;
+            node = n;
+        }
+    }
+
+    public ExpressionParser(String expression) {
+        this(expression, null);
+    }
+
     public ExpressionParser(String expression, Map<String, Complex> variables) {
-        this.expression = preprocess(expression.replaceAll("\\s+", ""));
-        this.position = 0;
-        this.variables = variables == null ? new HashMap<>() : variables;
+        if (expression == null)
+            expression = "";
+
+        this.expression = expression.replaceAll("\\s+", "");
+        this.pos = 0;
+        this.variables = variables == null ? new HashMap<>() : new HashMap<>(variables);
 
         this.allVariables = new HashMap<>(this.variables);
         this.allVariables.put("i", new Complex(0, 1));
     }
 
-    private String preprocess(String expr) {
-        if (expr == null || expr.isEmpty()) return "";
-        StringBuilder processed = new StringBuilder();
-        for (int i = 0; i < expr.length() - 1; i++) {
-            char c1 = expr.charAt(i);
-            char c2 = expr.charAt(i + 1);
-
-            processed.append(c1);
-            if (needsMultiplication(c1, c2)) {
-                processed.append('*');
-            }
-        }
-        processed.append(expr.charAt(expr.length() - 1));
-        return processed.toString();
-    }
-
-    private boolean needsMultiplication(char c1, char c2) {
-        return (Character.isDigit(c1) && (Character.isLetter(c2) || c2 == '(')) ||
-                (c1 == ')' && (Character.isDigit(c2) || Character.isLetter(c2) || c2 == '(')) ||
-                (Character.isLetter(c1) && (Character.isDigit(c2) || c2 == '('));
+    private boolean isKnownFunction(String name) {
+        return name.equalsIgnoreCase("sin") ||
+                name.equalsIgnoreCase("cos") ||
+                name.equalsIgnoreCase("tan") ||
+                name.equalsIgnoreCase("log") ||
+                name.equalsIgnoreCase("exp") ||
+                name.equalsIgnoreCase("abs") ||
+                name.equalsIgnoreCase("sqrt");
     }
 
     public Complex evaluate() {
-        root = null;
-        position = 0;
-        lastResult = evaluateAdditionSubtraction();
+        pos = 0;
+        Result r = parseExpression();
+        if (pos != expression.length())
+            throw new IllegalArgumentException("Erro perto de: " + expression.substring(pos));
 
-        if (position != expression.length()) {
-            throw new IllegalArgumentException("Erro ao analisar expressão próximo de: " + expression.substring(position));
-        }
-
+        root = r.node;
+        lastResult = r.value;
         return lastResult;
-    }
-
-    private Node makeNode(String value, Node left, Node right) {
-        return new Node(value, left, right);
-    }
-
-    private Complex evaluateAdditionSubtraction() {
-        Node leftNode = null;
-        Complex result = evaluateMultiplicationDivision();
-        leftNode = root;
-
-        while (position < expression.length()) {
-            char operator = expression.charAt(position);
-            if (operator == '+' || operator == '-') {
-                position++;
-                Complex right = evaluateMultiplicationDivision();
-                Node rightNode = root;
-
-                root = makeNode(String.valueOf(operator), leftNode, rightNode);
-
-                if (operator == '+') result = result.plus(right);
-                else result = result.minus(right);
-
-                leftNode = root;
-            } else break;
-        }
-        return result;
-    }
-
-    private Complex evaluateMultiplicationDivision() {
-        Node leftNode = null;
-        Complex result = evaluatePower();
-        leftNode = root;
-
-        while (position < expression.length()) {
-            char operator = expression.charAt(position);
-            if (operator == '*' || operator == '/') {
-                position++;
-                Complex right = evaluatePower();
-                Node rightNode = root;
-
-                root = makeNode(String.valueOf(operator), leftNode, rightNode);
-
-                if (operator == '*') result = result.times(right);
-                else result = result.divide(right);
-
-                leftNode = root;
-            } else break;
-        }
-        return result;
-    }
-
-    private Complex evaluatePower() {
-        Complex result = evaluatePrimary();
-        Node baseNode = root;
-
-        while (position < expression.length() && expression.charAt(position) == '^') {
-            position++;
-            Complex right = evaluatePrimary();
-            Node expNode = root;
-
-            if (right.getImag() != 0)
-                throw new IllegalArgumentException("Expoente da potência deve ser real.");
-
-            result = result.pow(right.getReal());
-            root = makeNode("^", baseNode, expNode);
-            baseNode = root;
-        }
-        return result;
-    }
-
-    private Complex evaluatePrimary() {
-        return evaluateUnitary();
-    }
-
-    private Complex evaluateUnitary() {
-        boolean isNegative = false;
-
-        if (position < expression.length() && expression.charAt(position) == '-') {
-            isNegative = true;
-            position++;
-        }
-
-        Complex result;
-
-        if (expression.substring(position).startsWith("√")) {
-            position++;
-            result = evaluateUnitary();
-            Node child = root;
-            result = result.pow(0.5);
-            root = new Node("√", child, null);
-        }
-        else if (position < expression.length() && expression.charAt(position) == '(') {
-            int savePos = position;
-            int start = position + 1;
-            int balance = 1;
-            int end = -1;
-            for (int i = start; i < expression.length(); i++) {
-                char c = expression.charAt(i);
-                if (c == '(') balance++;
-                if (c == ')') balance--;
-                if (balance == 0) {
-                    end = i;
-                    break;
-                }
-            }
-
-            if (end != -1) {
-                String content = expression.substring(start, end);
-                try {
-                    Complex lit = Complex.parse(content);
-                    position = end + 1;
-                    result = lit;
-                    root = new Node(content);
-                } catch (Exception ex) {
-                    position = savePos;
-                    position++; // consome '('
-                    result = evaluateAdditionSubtraction();
-                    if (position < expression.length() && expression.charAt(position) == ')') position++;
-                    else throw new IllegalArgumentException("Parênteses não fechados.");
-                }
-            } else {
-                throw new IllegalArgumentException("Parênteses não fechados.");
-            }
-        }
-        else if (position < expression.length() && Character.isLetter(expression.charAt(position))) {
-            int start = position;
-            while (position < expression.length() && Character.isLetter(expression.charAt(position)))
-                position++;
-
-            String varName = expression.substring(start, position);
-            if (!allVariables.containsKey(varName))
-                throw new IllegalArgumentException("Variável desconhecida: " + varName);
-
-            result = allVariables.get(varName);
-            root = new Node(varName);
-        }
-        else {
-            int start = position;
-            while (position < expression.length() &&
-                    (Character.isDigit(expression.charAt(position)) || expression.charAt(position) == '.'))
-                position++;
-
-            String num = expression.substring(start, position);
-            if (num.isEmpty()) throw new IllegalArgumentException("Número esperado.");
-
-            result = new Complex(Double.parseDouble(num), 0);
-            root = new Node(num);
-        }
-
-        if (isNegative) {
-            result = result.scale(-1);
-            root = makeNode("-", new Node("0"), root);
-        }
-
-        return result;
-    }
-
-    public DefaultMutableTreeNode getExecutionTree() {
-        String resultLabel = (lastResult != null) ? "Resultado: " + lastResult.toString() : "Resultado: (vazio)";
-        DefaultMutableTreeNode top = new DefaultMutableTreeNode(resultLabel);
-
-        DefaultMutableTreeNode exprTree = buildSwingTree(root);
-        top.add(exprTree);
-
-        return top;
-    }
-
-    private DefaultMutableTreeNode buildSwingTree(Node n) {
-        if (n == null) return new DefaultMutableTreeNode("vazio");
-
-        String label = n.value;
-
-        if (variables != null && variables.containsKey(n.value)) {
-            Complex val = variables.get(n.value);
-            label = n.value + " = " + val.toString();
-        } else {
-            try {
-                Complex c = Complex.parse(n.value);
-                label = c.toString();
-            } catch (Exception ignored) {
-
-            }
-        }
-
-        DefaultMutableTreeNode treeNode = new DefaultMutableTreeNode(label);
-
-        if (n.left != null) treeNode.add(buildSwingTree(n.left));
-        if (n.right != null) treeNode.add(buildSwingTree(n.right));
-
-        return treeNode;
     }
 
     public Node getAstRoot() {
         return root;
     }
 
-    public Complex getLastResult() {
-        return lastResult;
+    public DefaultMutableTreeNode getExecutionTree() {
+        if (root == null)
+            return new DefaultMutableTreeNode("Nenhuma expressão avaliada");
+
+        return buildTree(root);
+    }
+
+    private DefaultMutableTreeNode buildTree(Node n) {
+        DefaultMutableTreeNode dm = new DefaultMutableTreeNode(n.token + " = " + evaluateNode(n));
+
+        for (Node c : n.children)
+            dm.add(buildTree(c));
+
+        return dm;
+    }
+
+    // ==============================
+    // ÁRVORE LISP
+    // ==============================
+    public String getLispTree() {
+        if (root == null)
+            return "()";
+        return toLisp(root);
+    }
+
+    private String toLisp(Node node) {
+        if (node.children.isEmpty()) {
+            return node.token;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("(").append(node.token);
+
+        for (Node child : node.children) {
+            sb.append(" ").append(toLisp(child));
+        }
+
+        sb.append(")");
+        return sb.toString();
+    }
+
+    private String evaluateNode(Node node) {
+        try {
+            if (node.children.isEmpty()) {
+                // É um número ou variável
+                if (node.token.matches("-?\\d+(\\.\\d+)?")) {
+                    return node.token;
+                } else if (allVariables.containsKey(node.token)) {
+                    return allVariables.get(node.token).toString();
+                } else {
+                    return node.token;
+                }
+            }
+
+            // É uma operação
+            switch (node.token) {
+                case "+": return "soma";
+                case "-": return "subtração";
+                case "*": return "multiplicação";
+                case "/": return "divisão";
+                case "^": return "potência";
+                case "√": return "raiz";
+                case "sin": return "seno";
+                case "cos": return "cosseno";
+                case "tan": return "tangente";
+                case "log": return "logaritmo";
+                default: return node.token;
+            }
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
+    // ================================================
+    // PARSER SIMPLIFICADO - SEM PREPROCESS
+    // ================================================
+    private Result parseExpression() {
+        Result left = parseTerm();
+
+        while (pos < expression.length()) {
+            char op = expression.charAt(pos);
+            if (op == '+' || op == '-') {
+                pos++;
+                Result right = parseTerm();
+                Complex val = (op == '+') ? left.value.plus(right.value) : left.value.minus(right.value);
+                Node node = new Node(String.valueOf(op), left.node, right.node);
+                left = new Result(val, node);
+            } else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    private Result parseTerm() {
+        Result left = parseFactor();
+
+        while (pos < expression.length()) {
+            char op = expression.charAt(pos);
+            if (op == '*' || op == '/') {
+                pos++;
+                Result right = parseFactor();
+                Complex val = (op == '*') ? left.value.times(right.value) : left.value.divide(right.value);
+                Node node = new Node(String.valueOf(op), left.node, right.node);
+                left = new Result(val, node);
+            } else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    private Result parseFactor() {
+        // Verificar se é um sinal negativo
+        if (pos < expression.length() && expression.charAt(pos) == '-') {
+            pos++;
+            Result r = parseFactor();
+            Complex val = r.value.scale(-1);
+            Node zero = new Node("0");
+            Node node = new Node("-", zero, r.node);
+            return new Result(val, node);
+        }
+        return parsePower();
+    }
+
+    private Result parsePower() {
+        Result left = parsePrimary();
+
+        if (pos < expression.length() && expression.charAt(pos) == '^') {
+            pos++;
+            Result right = parseFactor();
+
+            if (right.value.getImag() != 0)
+                throw new IllegalArgumentException("Expoente deve ser real.");
+
+            Complex val = left.value.pow(right.value.getReal());
+            Node node = new Node("^", left.node, right.node);
+            return new Result(val, node);
+        }
+        return left;
+    }
+
+    private Result parsePrimary() {
+        if (pos >= expression.length())
+            throw new IllegalArgumentException("Expressão incompleta");
+
+        char c = expression.charAt(pos);
+
+        // Parênteses
+        if (c == '(') {
+            pos++;
+            Result inside = parseExpression();
+            if (pos >= expression.length() || expression.charAt(pos) != ')')
+                throw new IllegalArgumentException("Parêntese não fechado");
+            pos++;
+            return inside;
+        }
+
+        // Números (reais ou complexos)
+        if (Character.isDigit(c) || c == '.' || c == '+' || c == '-') {
+            // Verificar se é um número (pode ser negativo ou positivo)
+            if (c == '+' || c == '-') {
+                // Verificar se depois do sinal vem um dígito ou ponto
+                if (pos + 1 < expression.length() &&
+                        (Character.isDigit(expression.charAt(pos + 1)) || expression.charAt(pos + 1) == '.')) {
+                    return parseNumber();
+                }
+            } else {
+                return parseNumber();
+            }
+        }
+
+        // Letras (funções ou variáveis)
+        if (Character.isLetter(c)) {
+            return parseIdentifier();
+        }
+
+        // Raiz quadrada (√)
+        if (c == '√') {
+            pos++;
+            Result r = parsePrimary();
+
+            if (r.value.getImag() != 0)
+                throw new IllegalArgumentException("sqrt só suporta números reais.");
+
+            Complex val = Complex.sqrt(r.value.getReal());
+            Node node = new Node("√", r.node);
+            return new Result(val, node);
+        }
+
+        throw new IllegalArgumentException("Caractere inválido: '" + c + "'");
+    }
+
+    private Result parseNumber() {
+        int start = pos;
+
+        // Verificar se é um número complexo (contém 'i')
+        boolean hasImaginary = false;
+        for (int i = pos; i < expression.length(); i++) {
+            char c = expression.charAt(i);
+            if (c == 'i') {
+                hasImaginary = true;
+                break;
+            }
+            if (!Character.isDigit(c) && c != '.' && c != '+' && c != '-') {
+                break;
+            }
+        }
+
+        if (hasImaginary) {
+            // É um número complexo - parsear até o 'i'
+            while (pos < expression.length()) {
+                char c = expression.charAt(pos);
+                if (c == 'i') {
+                    pos++; // Incluir o 'i'
+                    break;
+                }
+                if (!Character.isDigit(c) && c != '.' && c != '+' && c != '-') {
+                    break;
+                }
+                pos++;
+            }
+
+            String complexStr = expression.substring(start, pos);
+            try {
+                Complex val = Complex.parse(complexStr);
+                Node node = new Node(complexStr);
+                return new Result(val, node);
+            } catch (Exception e) {
+                throw new IllegalArgumentException("Número complexo inválido: " + complexStr);
+            }
+        } else {
+            // É um número real normal
+            // Parte inteira
+            while (pos < expression.length() && Character.isDigit(expression.charAt(pos))) {
+                pos++;
+            }
+
+            // Parte decimal
+            if (pos < expression.length() && expression.charAt(pos) == '.') {
+                pos++;
+                while (pos < expression.length() && Character.isDigit(expression.charAt(pos))) {
+                    pos++;
+                }
+            }
+
+            String numStr = expression.substring(start, pos);
+            double value = Double.parseDouble(numStr);
+            Node node = new Node(numStr);
+            return new Result(new Complex(value, 0), node);
+        }
+    }
+
+    private Result parseIdentifier() {
+        int start = pos;
+        while (pos < expression.length() && Character.isLetter(expression.charAt(pos))) {
+            pos++;
+        }
+
+        String name = expression.substring(start, pos);
+
+        // Verificar se é uma função (tem parênteses logo após)
+        if (pos < expression.length() && expression.charAt(pos) == '(') {
+            // É uma função
+            pos++; // Pular '('
+            Result arg = parseExpression();
+
+            if (pos >= expression.length() || expression.charAt(pos) != ')') {
+                throw new IllegalArgumentException("Parêntese não fechado na função " + name);
+            }
+            pos++; // Pular ')'
+
+            Complex val;
+            switch (name.toLowerCase()) {
+                case "sin":
+                    val = Complex.sin(arg.value);
+                    break;
+                case "cos":
+                    val = Complex.cos(arg.value);
+                    break;
+                case "tan":
+                    val = Complex.tan(arg.value);
+                    break;
+                case "log":
+                    val = Complex.log(arg.value);
+                    break;
+                case "exp":
+                    val = Complex.exp(arg.value);
+                    break;
+                case "abs":
+                    val = new Complex(arg.value.abs(), 0);
+                    break;
+                case "sqrt":
+                    if (arg.value.getImag() != 0)
+                        throw new IllegalArgumentException("sqrt só suporta números reais.");
+                    val = Complex.sqrt(arg.value.getReal());
+                    break;
+                default:
+                    throw new IllegalArgumentException("Função desconhecida: " + name);
+            }
+
+            Node node = new Node(name, arg.node);
+            return new Result(val, node);
+        } else {
+            // É uma variável
+            if (!allVariables.containsKey(name)) {
+                throw new IllegalArgumentException("Variável desconhecida: " + name);
+            }
+
+            Complex val = allVariables.get(name);
+            Node node = new Node(name);
+            return new Result(val, node);
+        }
     }
 }
